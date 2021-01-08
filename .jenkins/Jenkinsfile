@@ -1,129 +1,257 @@
-#!groovy
-
-node {
-    
-    err = null
-    def gitCommit
-       
-    try{
-    
-        notifyService("START")
-        
-        stage('Clean out Workspace'){
-            deleteDir()
-         }
-        
-        stage('Checkout') {
-            sh "echo checking out scm...${BRANCH_TO_USE}"
-            git([url: 'https://github.com/NIT-Administrative-Systems/ADO-EACD-DevOpsTrainingMaster', branch: '${BRANCH_TO_USE}',  credentialsId:"GitHub-awsCloudOpsCJT" ])
-            gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-            sh "echo Git Commit tag =  ${gitCommit}"
-        }
-
-        stage('Get and Init') {
-            withCredentials([[
-                $class: 'AmazonWebServicesCredentialsBinding',
-                credentialsId: 'terraform',
-                accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-                secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-            ]]) {
-                sh 'tfenv install'
-                sh 'terraform -version'
-                sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform get; terraform init'
+pipeline {
+    agent any
+    // agent {
+    //     label 'agent'
+    // }
+    parameters {
+        choice( choices: ['{YOUR ENV NAME}'], description: 'Environment/Folder to build iac from', name: 'FOLDER')
+        string(name: 'region', defaultValue: 'us-east-2', description: 'AWS region to build the service in')
+    }
+    stages {
+        stage('clean workspace') {
+            steps {
+                script {
+                    deleteDir()
+                }
             }
         }
-
-        stage('Plan') {
-        withCredentials([[
-            $class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'terraform',
-            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-
-            
-            sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform plan'
+        stage('checkout') {
+            steps {
+                script {
+                    sh "echo checking out scm...${BRANCH_TO_USE}"
+                    git([url: '{YOUR REPO URL}', branch: '${BRANCH_TO_USE}',  credentialsId:"GitHub-awsCloudOpsCJT" ])
+                    gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+                    sh "echo Git Commit tag =  ${gitCommit}"
                 }
-        }
-
-        stage('Apply') {
-        withCredentials([[
-            $class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'terraform',
-            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-
-            
-            sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform apply -auto-approve'
-                }
-        }
-
-        stage('Populate S3 bucket') {
-        withCredentials([[
-            $class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'terraform',
-            accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-            secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        ]]) {
-            sh  'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; aws s3 sync ../clientSideFiles s3://wildrydes-clientbucket-${BUILD_ENV}'
             }
-        } 
-
-        // stage('Destroy') {
-        // withCredentials([[
-        //     $class: 'AmazonWebServicesCredentialsBinding',
-        //     credentialsId: 'terraform',
-        //     accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-        //     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
-        // ]]) {
-
-        //     sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; echo "yes" | terraform destroy'
-        //     // sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform plan'
-        //         }
-        // }
-    
+        }
+        stage('git and init') {
+            steps {
+                script {
+                    withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'terraform',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh 'tfenv install 0.14.3'
+                    sh 'terraform -version'
+                    sh 'ls -a'
+                    sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform get; terraform init'
+                    }
+                }
+            }
+        }
+        stage('plan') {
+            steps {
+                script {
+                    withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'terraform',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform plan'
+                    }
+                }
+            }
+        }
+        stage('apply') {
+            steps {
+                script {
+                    withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'terraform',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform apply -auto-approve'
+                    }
+                }
+            }
+        }
+        stage('populate s3 bucket') {
+            steps {
+                script {
+                    withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'terraform',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh  'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; aws s3 sync ../clientSideFiles s3://${YOUR BUCKET NAME}'
+                    }
+                }
+            }
+        }
     }
-    catch (caughtError) {
-    err = caughtError
-    currentBuild.result = "FAILURE"
-  } finally {
-     if (currentBuild.result == "FAILURE") {
-        notifyService("FAILURE");
-     }
-     else 
-     { 
-        notifyService("COMPLETED");
-     }
-
-    /* Must re-throw exception to propagate error */
-    if (err) {
-        throw err
+    post {
+        failure {
+            notifyService("FAILURE")
+        }
+        success {
+            notifyService("SUCCESS")
+        }
+        always {
+            echo "BUILD FINISHED"
+        }
     }
-  }
 }
 
 def notifyService(String state) {
      
-      def messageD = null
-      def colorX = null
-      if (state == "START"){
-          messageD = "STARTED"
-          colorX = "#EFBD3F"
-      }
-      else if (state =="FAILURE"){
-          messageD = "FAILED"
-          colorX = "#FF0000"         
-      }
-      else{
-          messageD = "SUCCESS"
-          colorX ="#36A64F"
-          
-      }
-      wrap([$class: 'BuildUser']) {
-          
-         withCredentials([string(credentialsId: 'teams-build-webhook', variable: 'TEAMS_WEBHOOK_URL')]) {
-            office365ConnectorSend(webhookUrl: "$TEAMS_WEBHOOK_URL", color: colorX, status: messageD, message: "Environment: '${BUILD_ENV}' | from Branch: '${BRANCH_TO_USE}' | Job started by '${BUILD_USER}'")
-         } 
-        }
+    def messageD = null
+    def colorX = null
+    if (state == "START"){
+        messageD = "STARTED"
+        colorX = "#EFBD3F"
+    }
+    else if (state =="FAILURE"){
+        messageD = "FAILED"
+        colorX = "#FF0000"         
+    }
+    else{
+        messageD = "SUCCESS"
+        colorX ="#36A64F"
+        
+    }
+    wrap([$class: 'BuildUser']) {
+        
+        withCredentials([string(credentialsId: 'teams-build-webhook', variable: 'TEAMS_WEBHOOK_URL')]) {
+        office365ConnectorSend(webhookUrl: "$TEAMS_WEBHOOK_URL", color: colorX, status: messageD, message: "Environment: '${BUILD_ENV}' | from Branch: '${BRANCH_TO_USE}' | Job started by '${BUILD_USER}'")
+        } 
+    }
 }
+
+// ------------------------------------------------------------------------------------------------
+// |                             OLD (SCRIPTED) JENKINSFILE                                       |
+// ------------------------------------------------------------------------------------------------
+// #!groovy
+
+// node {
+    
+//     err = null
+//     def gitCommit
+       
+//     try{
+    
+//         notifyService("START")
+        
+//         stage('Clean out Workspace'){
+//             deleteDir()
+//          }
+        
+//         stage('Checkout') {
+//             sh "echo checking out scm...${BRANCH_TO_USE}"
+//             git([url: 'https://github.com/NIT-Administrative-Systems/ADO-EACD-DevOpsTrainingMaster', branch: '${BRANCH_TO_USE}',  credentialsId:"GitHub-awsCloudOpsCJT" ])
+//             gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+//             sh "echo Git Commit tag =  ${gitCommit}"
+//         }
+
+//         stage('Get and Init') {
+//             withCredentials([[
+//                 $class: 'AmazonWebServicesCredentialsBinding',
+//                 credentialsId: 'terraform',
+//                 accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+//                 secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+//             ]]) {
+//                 sh 'tfenv install'
+//                 sh 'terraform -version'
+//                 sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform get; terraform init'
+//             }
+//         }
+
+//         stage('Plan') {
+//         withCredentials([[
+//             $class: 'AmazonWebServicesCredentialsBinding',
+//             credentialsId: 'terraform',
+//             accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+//             secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+//         ]]) {
+
+            
+//             sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform plan'
+//                 }
+//         }
+
+//         stage('Apply') {
+//         withCredentials([[
+//             $class: 'AmazonWebServicesCredentialsBinding',
+//             credentialsId: 'terraform',
+//             accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+//             secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+//         ]]) {
+
+            
+//             sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform apply -auto-approve'
+//                 }
+//         }
+
+//         stage('Populate S3 bucket') {
+//         withCredentials([[
+//             $class: 'AmazonWebServicesCredentialsBinding',
+//             credentialsId: 'terraform',
+//             accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+//             secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+//         ]]) {
+//             sh  'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; aws s3 sync ../clientSideFiles s3://wildrydes-clientbucket-${BUILD_ENV}'
+//             }
+//         } 
+
+//         // stage('Destroy') {
+//         // withCredentials([[
+//         //     $class: 'AmazonWebServicesCredentialsBinding',
+//         //     credentialsId: 'terraform',
+//         //     accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+//         //     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+//         // ]]) {
+
+//         //     sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; echo "yes" | terraform destroy'
+//         //     // sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=${REGION} cd ${BUILD_ENV}; terraform plan'
+//         //         }
+//         // }
+    
+//     }
+//     catch (caughtError) {
+//     err = caughtError
+//     currentBuild.result = "FAILURE"
+//   } finally {
+//      if (currentBuild.result == "FAILURE") {
+//         notifyService("FAILURE");
+//      }
+//      else 
+//      { 
+//         notifyService("COMPLETED");
+//      }
+
+//     /* Must re-throw exception to propagate error */
+//     if (err) {
+//         throw err
+//     }
+//   }
+// }
+
+// def notifyService(String state) {
+     
+//       def messageD = null
+//       def colorX = null
+//       if (state == "START"){
+//           messageD = "STARTED"
+//           colorX = "#EFBD3F"
+//       }
+//       else if (state =="FAILURE"){
+//           messageD = "FAILED"
+//           colorX = "#FF0000"         
+//       }
+//       else{
+//           messageD = "SUCCESS"
+//           colorX ="#36A64F"
+          
+//       }
+//       wrap([$class: 'BuildUser']) {
+          
+//          withCredentials([string(credentialsId: 'teams-build-webhook', variable: 'TEAMS_WEBHOOK_URL')]) {
+//             office365ConnectorSend(webhookUrl: "$TEAMS_WEBHOOK_URL", color: colorX, status: messageD, message: "Environment: '${BUILD_ENV}' | from Branch: '${BRANCH_TO_USE}' | Job started by '${BUILD_USER}'")
+//          } 
+//         }
+// }
